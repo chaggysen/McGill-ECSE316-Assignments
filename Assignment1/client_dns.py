@@ -1,4 +1,5 @@
 import socket
+import time
 
 
 class DNS_CLIENT:
@@ -6,4 +7,8 @@ class DNS_CLIENT:
         pass
 
     def send_query():
+        # make request
+        pass
+
+    def refactor_response():
         pass

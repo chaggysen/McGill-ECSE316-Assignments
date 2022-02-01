@@ -27,7 +27,6 @@ class DNS_CLIENT:
                 "Server: " + self.address + "\n" + \
                 "Request type: " + self.qType + "\n"
             print(requestDescription)
-        pass
 
         if retries > self.MAXRETRIES:
             print("Maximum retries reached. Exiting...")
@@ -60,7 +59,7 @@ class DNS_CLIENT:
             print("Response received after " + (end - start) + " seconds " + "(" + (retries - 1) + " retries)")
 
             # TODO
-            res = self.refactor_response()
+            res = self.refactor_response(receivePacket, len(sendData))
             self.print_response(res)
 
         except socket.timeout as msg:
@@ -71,7 +70,7 @@ class DNS_CLIENT:
             return
 
 
-    def refactor_response(self):
+    def refactor_response(self, rcvPacket, lenData):
         pass
 
     def constructRequest(self):

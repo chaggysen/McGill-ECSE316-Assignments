@@ -1,5 +1,7 @@
 import argparse
 from client_dns import DNS_CLIENT
+import struct
+import random
 
 
 def __main__():

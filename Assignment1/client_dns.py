@@ -1,5 +1,8 @@
 import socket
 import time
+import struct
+import random
+
 
 class DNS_CLIENT:
     def __init__(self, args):
@@ -57,7 +60,8 @@ class DNS_CLIENT:
             end = time.time()
             clientSocket.close()
 
-            print("Response received after " + (end - start) + " seconds " + "(" + (retries - 1) + " retries)")
+            print("Response received after " + (end - start) +
+                  " seconds " + "(" + (retries - 1) + " retries)")
 
             # TODO
             res = self.refactor_response()
@@ -70,12 +74,41 @@ class DNS_CLIENT:
             print("Error: " + str(msg))
             return
 
-
     def refactor_response(self):
         pass
 
-    def constructRequest(self):
-        pass
+    def construct_header():
+        header = bytes()
+        # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
+        items = [random.getrandbits(16), 256, 1, 0, 0, 0]
+        for item in items:
+            header += struct.pack(">H", item)
+        return header
+
+    def construct_question(self, name):
+        question = bytes()
+        url_parts = name.split('.')
+        for label in url_parts:
+            # a label with n char follows
+            question += struct.pack('B', len(label))
+            for char in label:
+                question += struct.pack('c', char.encode('utf-8'))
+        return question
+
+    def construct_footer(self, q_type):
+        QNAME_end, Q_Class = 0, 1
+        footer = struct.pack('B', QNAME_end)
+        footer += struct.pack('>H', int(q_type))
+        footer += struct.pack(">H", Q_Class)
+        return footer
+
+    def constructRequest(self, name, q_type):
+        request = bytes()
+        header = self.construct_header()
+        question = self.construct_question(name)
+        footer = self.construct_footer(q_type)
+        request += (header + question + footer)
+        return request
 
     def print_response(self, response):
         pass

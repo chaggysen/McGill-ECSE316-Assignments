@@ -42,26 +42,29 @@ class DNS_CLIENT:
             clientSocket.settimeout(self.timeout)
 
             # Create InetAddress used by datagram packet
-            ipAddress = socket.inet_aton(self.address)
+            # NO NEED
+            # ipAddress = socket.inet_aton(self.address)
 
-            # Setting up request TODO
-            sendData = self.constructRequest()
+            sendData = self.constructRequest(self.name, self.qType)
             receiveData = bytearray(1024)
 
             # Setting up packets
-            clientPacket = (ipAddress, self.port)
+            print(self.address)
+            clientPacket = (self.address, self.port)
             receivePacket = (receiveData, 1024)
 
             # measure the time taken to send and receive query
             start = time.time()
             clientSocket.sendto(sendData, clientPacket)
-            clientSocket.recvfrom(receivePacket)
+            receivePacket, receiveaAddress = clientSocket.recvfrom(1024)
+            print(receivePacket)
             end = time.time()
             clientSocket.close()
 
             print("Response received after " + (end - start) +
                   " seconds " + "(" + (retries - 1) + " retries)")
 
+            print(receivePacket)
             # TODO
             res = self.refactor_response(receivePacket, len(sendData))
             self.print_response(res)
@@ -76,10 +79,10 @@ class DNS_CLIENT:
     def refactor_response(self, rcvPacket, lenData):
         pass
 
-    def construct_header():
+    def construct_header(self):
         header = bytes()
         # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
-        items = [random.getrandbits(16), 256, 1, 0, 0, 0]
+        items = [random.getrandbits(16), 256, 1, 1, 0, 0]
         for item in items:
             header += struct.pack(">H", item)
         return header
@@ -96,8 +99,10 @@ class DNS_CLIENT:
 
     def construct_footer(self, q_type):
         QNAME_end, Q_Class = 0, 1
-        footer = struct.pack('B', QNAME_end)
-        footer += struct.pack('>H', int(q_type))
+        footer = bytes()
+        footer += struct.pack('B', QNAME_end)
+        print(q_type)
+        footer += struct.pack('>H', self.match_query_to_int(q_type))
         footer += struct.pack(">H", Q_Class)
         return footer
 
@@ -107,7 +112,23 @@ class DNS_CLIENT:
         question = self.construct_question(name)
         footer = self.construct_footer(q_type)
         request += (header + question + footer)
+        print(request)
         return request
+
+    def match_query_to_int(self, q_type):
+        q_type_dict = {
+            'A': 1,
+            'NS': 2,
+            'CNAME': 5,
+            'SOA': 6,
+            'HINFO': 13,
+            'MX': 15,
+            "OTHER": 100
+        }
+        if q_type in q_type_dict:
+            return q_type_dict[q_type]
+        else:
+            return q_type_dict['A']
 
     def print_response(self, response):
         pass

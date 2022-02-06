@@ -37,19 +37,14 @@ class DNS_CLIENT:
 
         try:
             # Setting up socket
-            # DGRAM instead of STREAM
             clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             clientSocket.settimeout(self.timeout)
 
-            # Create InetAddress used by datagram packet
-            # NO NEED
-            # ipAddress = socket.inet_aton(self.address)
-
             sendData = self.constructRequest(self.name, self.qType)
+            print(sendData)
             receiveData = bytearray(1024)
 
             # Setting up packets
-            print(self.address)
             clientPacket = (self.address, self.port)
             receivePacket = (receiveData, 1024)
 
@@ -57,15 +52,15 @@ class DNS_CLIENT:
             start = time.time()
             clientSocket.sendto(sendData, clientPacket)
             receivePacket, receiveaAddress = clientSocket.recvfrom(1024)
-            print(receivePacket)
             end = time.time()
             clientSocket.close()
 
-            print("Response received after " + (end - start) +
-                  " seconds " + "(" + (retries - 1) + " retries)")
-
             print(receivePacket)
-            # TODO
+            print(receiveaAddress)
+
+            print("Response received after " + str(end - start) +
+                  " seconds " + "(" + str(retries - 1) + " retries)")
+
             res = self.refactor_response(receivePacket, len(sendData))
             self.print_response(res)
 
@@ -76,13 +71,15 @@ class DNS_CLIENT:
             print("Error: " + str(msg))
             return
 
-    def refactor_response(self, rcvPacket, lenData):
+    def refactor_response(self, rcvPacket, lenSent):
+        # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
+        # NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA, PREFERENCE, EXCHANGE
         pass
 
     def construct_header(self):
         header = bytes()
         # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
-        items = [random.getrandbits(16), 256, 1, 1, 0, 0]
+        items = [random.getrandbits(16), 256, 1, 0, 0, 0]
         for item in items:
             header += struct.pack(">H", item)
         return header
@@ -101,7 +98,6 @@ class DNS_CLIENT:
         QNAME_end, Q_Class = 0, 1
         footer = bytes()
         footer += struct.pack('B', QNAME_end)
-        print(q_type)
         footer += struct.pack('>H', self.match_query_to_int(q_type))
         footer += struct.pack(">H", Q_Class)
         return footer
@@ -112,7 +108,6 @@ class DNS_CLIENT:
         question = self.construct_question(name)
         footer = self.construct_footer(q_type)
         request += (header + question + footer)
-        print(request)
         return request
 
     def match_query_to_int(self, q_type):

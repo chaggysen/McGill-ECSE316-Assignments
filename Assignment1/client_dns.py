@@ -73,8 +73,87 @@ class DNS_CLIENT:
 
     def refactor_response(self, rcvPacket, lenSent):
         # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
-        # NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA, PREFERENCE, EXCHANGE
-        pass
+        # NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA(PREFERENCE, EXCHANGE)
+        # get only the answer part
+        answer = rcvPacket[lenSent:]
+        # get the name
+        name = ""
+        first = struct.unpack('B', answer[0:1])[0]
+        if first == 192: #pointer (need to better integrate this for the rest)
+            offset = struct.unpack('>H', answer[0:2])[0] - 49152 # c000 is 49152
+            nameStart = rcvPacket[offset:]
+            label = nameStart[0]
+            end = 0
+            while label != 0:
+                print(label)
+                end += label + 1
+                label = nameStart[end]
+            name = nameStart[:end]
+        else: # not pointer
+            nameStart = answer[1:]
+            label = nameStart[0]
+            end = 0
+            while label != 0:
+                end += label + 1
+                label = nameStart[end]
+            name = nameStart[:end]
+            answer = answer[end:] 
+        # get the actual name
+        actualName = self.convert_bytes_to_qname(name)
+        print("Name: " + str(actualName))
+
+        # get the TYPE
+        type = struct.unpack('>H', answer[2:4])[0]
+        type = self.match_type_to_query(type)
+        print("Type: " + type)
+
+        # get the CLASS
+        class_ = struct.unpack('>H', answer[4:6])[0]
+        print("Class: " + str(class_))
+        if class_ != 1:
+            print("Class is not 1. This is not a valid DNS response.")
+            return
+
+        # get the TTL
+        ttl = struct.unpack('>I', answer[6:10])[0]
+        print("TTL: " + str(ttl))
+
+        # get the RDLENGTH
+        rdlength = struct.unpack('>H', answer[10:12])[0]
+        print("RDLENGTH: " + str(rdlength))
+
+        # get the RDATA
+        rdata = answer[12:12 + rdlength]
+        if type == 'A':
+            ipAddr = str(rdata[0]) + '.' + str(rdata[1]) + '.' + str(rdata[2]) + '.' + str(rdata[3])
+            print("IP Address: " + str(ipAddr))
+        elif type == 'NS':
+            name = rdata[0]
+            # get the actual name
+            actualName = self.convert_bytes_to_qname(name)
+            print("Server Name: " + str(actualName))
+        elif type == 'CNAME': # not sure for this part
+            name = rdata[0]
+            # get the actual name
+            actualName = self.convert_bytes_to_qname(name)
+            print("Alias Name: " + str(actualName))
+        elif type == 'MX':
+            preference = struct.unpack('>H', rdata[0:2])[0]
+            name = rdata[2]
+            # get the actual name
+            actualName = self.convert_bytes_to_qname(name)
+            print("Preference: " + str(preference))
+            print("Exchange Name: " + str(actualName))
+
+    def convert_bytes_to_qname(self, bytes):
+        # not sure this actually works with number in url
+        qname = ""
+        for i in range(len(bytes)):
+            if bytes[i:i+1].isalpha():
+                qname += chr(bytes[i])
+            elif i != 0:
+                qname += "."
+        return qname
 
     def construct_header(self):
         header = bytes()
@@ -124,6 +203,21 @@ class DNS_CLIENT:
             return q_type_dict[q_type]
         else:
             return q_type_dict['A']
+
+    def match_type_to_query(self, type):
+        type_dict = {
+            1: 'A',
+            2: 'NS',
+            5: 'CNAME',
+            6: 'SOA',
+            13: 'HINFO',
+            15: 'MX',
+            100: 'OTHER'
+        }
+        if type in type_dict:
+            return type_dict[type]
+        else:
+            return 'A'
 
     def print_response(self, response):
         pass

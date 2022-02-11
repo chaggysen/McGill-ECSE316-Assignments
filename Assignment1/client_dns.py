@@ -220,4 +220,21 @@ class DNS_CLIENT:
             return 'A'
 
     def print_response(self, response):
-        pass
+        ancount = response['ancount']
+        arcount = response['arcount']
+
+        if ancount + arcount <= 0:
+            print("NOT FOUND")
+            return
+
+        if ancount > 0:
+            print("***Answer Section (" + ancount + " records)***")
+            for answer in response['answers']:
+                print(str(answer))
+
+        print()
+
+        if arcount > 0:
+            print("***Additional Section (" + arcount + " records)***")
+            for add in response['additional']:
+                print(str(add))

@@ -32,7 +32,7 @@ class DNS_CLIENT:
             print(requestDescription)
 
         if retries > self.MAXRETRIES:
-            print("ERROR \t Maximum number of retries (" + str(self.MAXRETRIES) +  ") exceeded")
+            print("ERROR\t Maximum number of retries (" + str(self.MAXRETRIES) +  ") exceeded")
             return
 
         try:
@@ -66,7 +66,7 @@ class DNS_CLIENT:
             print("Timeout reached. Retrying...")
             self.send_query(retries + 1)
         except socket.error as msg:
-            print("ERROR \t" + str(msg))
+            print("ERROR\t" + str(msg))
             return
 
     def print_response(self, response):
@@ -80,14 +80,14 @@ class DNS_CLIENT:
         if ancount > 0:
             print("***Answer Section (" + ancount + " records)***")
             for answer in response['answers']:
-                print(str(answer))
+                print(answer)
 
         print()
 
         if arcount > 0:
             print("***Additional Section (" + arcount + " records)***")
             for add in response['additional']:
-                print(str(add))
+                print(add)
 
     def refactor_response(self, rcvPacket, lenSent):
 
@@ -174,6 +174,31 @@ class DNS_CLIENT:
             records.append(new_record)
             count -= 1
         return records, ofs
+
+    def flatten(self, lst):
+        if lst == []:
+            return lst
+        if isinstance(lst[0], list):
+            return self.flatten(lst[0]) + self.flatten(lst[1:])
+        return lst[:1] + self.flatten(lst[1:])
+
+    def format_a_record(self, address, ttl, auth):
+        return "IP\t" + address + "\t" + str(ttl) + "\t" + auth
+
+    def format_cname_record(self, cname, ttl, auth):
+        flattened = self.flatten(cname)
+        flattened = b'.'.join(flattened).decode('utf-8')
+        return "CNAME\t" + flattened + "\t" + str(ttl) + "\t" + auth
+
+    def format_mx_record(self, exchange, preference, ttl, auth):
+        flattened = self.flatten(exchange)
+        flattened = b'.'.join(flattened).decode('utf-8')
+        return "MX\t" + flattened + "\t" + str(preference) + "\t" + str(ttl) + "\t" + auth
+
+    def format_ns_record(self, name_server, ttl, auth):
+        flattened = self.flatten(name_server)
+        flattened = b'.'.join(flattened).decode('utf-8')
+        return "NS\t" + flattened + "\t" + str(ttl) + "\t" + auth
 
     def parse_questions(self, packet, count, ofs):
         section = struct.Struct("!2H")

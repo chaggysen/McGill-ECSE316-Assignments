@@ -41,6 +41,7 @@ class DNS_CLIENT:
             clientSocket.settimeout(self.timeout)
 
             sendData = self.constructRequest(self.name, self.qType)
+            print("Data sent:")
             print(sendData)
             receiveData = bytearray(1024)
 
@@ -55,6 +56,7 @@ class DNS_CLIENT:
             end = time.time()
             clientSocket.close()
 
+            print("Packet received")
             print(receivePacket)
             print(receiveaAddress)
 
@@ -71,79 +73,125 @@ class DNS_CLIENT:
             print("Error: " + str(msg))
             return
 
-    def refactor_response(self, rcvPacket, lenSent):
-        # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
-        # NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA(PREFERENCE, EXCHANGE)
-        # get only the answer part
-        answer = rcvPacket[lenSent:]
-        # get the name
-        name = ""
-        first = struct.unpack('B', answer[0:1])[0]
-        if first == 192: #pointer (need to better integrate this for the rest)
-            offset = struct.unpack('>H', answer[0:2])[0] - 49152 # c000 is 49152
-            nameStart = rcvPacket[offset:]
-            label = nameStart[0]
-            end = 0
-            while label != 0:
-                print(label)
-                end += label + 1
-                label = nameStart[end]
-            name = nameStart[:end]
-        else: # not pointer
-            nameStart = answer[1:]
-            label = nameStart[0]
-            end = 0
-            while label != 0:
-                end += label + 1
-                label = nameStart[end]
-            name = nameStart[:end]
-            answer = answer[end:] 
-        # get the actual name
-        actualName = self.convert_bytes_to_qname(name)
-        print("Name: " + str(actualName))
+    def print_response(self, response):
+        ancount = response['ancount']
+        arcount = response['arcount']
 
-        # get the TYPE
-        type = struct.unpack('>H', answer[2:4])[0]
-        type = self.match_type_to_query(type)
-        print("Type: " + type)
-
-        # get the CLASS
-        class_ = struct.unpack('>H', answer[4:6])[0]
-        print("Class: " + str(class_))
-        if class_ != 1:
-            print("Class is not 1. This is not a valid DNS response.")
+        if ancount + arcount <= 0:
+            print("NOT FOUND")
             return
 
-        # get the TTL
-        ttl = struct.unpack('>I', answer[6:10])[0]
-        print("TTL: " + str(ttl))
+        if ancount > 0:
+            print("***Answer Section (" + ancount + " records)***")
+            for answer in response['answers']:
+                print(str(answer))
 
-        # get the RDLENGTH
-        rdlength = struct.unpack('>H', answer[10:12])[0]
-        print("RDLENGTH: " + str(rdlength))
+        print()
 
-        # get the RDATA
-        rdata = answer[12:12 + rdlength]
-        if type == 'A':
-            ipAddr = str(rdata[0]) + '.' + str(rdata[1]) + '.' + str(rdata[2]) + '.' + str(rdata[3])
-            print("IP Address: " + str(ipAddr))
-        elif type == 'NS':
-            name = rdata[0]
-            # get the actual name
-            actualName = self.convert_bytes_to_qname(name)
-            print("Server Name: " + str(actualName))
-        elif type == 'CNAME': # not sure for this part
-            name = rdata[0]
-            # get the actual name
-            actualName = self.convert_bytes_to_qname(name)
-            print("Alias Name: " + str(actualName))
-        elif type == 'MX':
-            preference = struct.unpack('>H', rdata[0:2])[0]
-            name = rdata[2]
-            # get the actual name
-            actualName = self.convert_bytes_to_qname(name)
-            print("Preference: " + str(preference))
-            print("Exchange Name: " + str(actualName))
+        if arcount > 0:
+            print("***Additional Section (" + arcount + " records)***")
+            for add in response['additional']:
+                print(str(add))
+
+    def refactor_response(self, rcvPacket, lenSent):
+
+        # Unpack header
+        ID, flags, QD_COUNT, AN_COUNT, NS_COUNT, AR_COUNT = self.unpack_header(
+            rcvPacket)
+        print("id: " + str(ID))
+        print("flags: " + str(flags))
+        print("qdcount: " + str(QD_COUNT))
+        print("ancount: " + str(AN_COUNT))
+        print("nscount: " + str(NS_COUNT))
+        print("arcount: " + str(AR_COUNT))
+
+        # Non-autoritative response
+        AA = (flags & 0x0400) != 0
+        # Header offset
+        header_offset = 12
+
+        questions, question_offset = self.parse_questions(
+            rcvPacket, QD_COUNT, header_offset)
+        print(questions)
+        answers, answer_offset = self.parse_answers(
+            rcvPacket, AN_COUNT, question_offset, AA)
+        # authoritatives, autho_offset = self.parse_autho(
+        #     rcvPacket, NS_COUNT, answer_offset, AA)
+        # additionals, addi_offset = self.parse_addi(
+        #     rcvPacket, AR_COUNT, autho_offset, AA)
+
+    def parse_answers(self, packet, count, ofs, AA):
+        return self.parse_sections(packet, count, ofs, AA)
+
+    def parse_autho(self, packet, count, ofs, AA):
+        return self.parse_sections(packet, count, ofs, AA)
+
+    def parse_addi(self, packet, count, ofs, AA):
+        return self.parse_sections(packet, count, ofs, AA)
+
+    def get_name_type_class(self, packet, ofs, section):
+        x_name, x_ofs = self.parse_labels(packet, ofs)
+        x_type, x_class = section.unpack_from(packet, x_ofs)
+        return [x_name, x_type, x_class, x_ofs]
+
+    def format_unpack(self, struct_format, packet, ofs):
+        unpack, = struct_format.unpack_from(packet, ofs)
+        new_ofs = ofs + struct_format.size
+        return [unpack, new_ofs]
+
+    def build_default_record(self, authorization, a_name, a_type, a_class, ttl, rdlength):
+        return {
+            # change name :))))))))))))))) !!!!!!!!!!!!!!!!!!!!!!!! OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+            "auth": authorization,
+            "domain_name": a_name,
+            "query_type": a_type,
+            "query_class": a_class,
+            "ttl": ttl,
+            "rdlength": rdlength
+        }
+
+    def check_type(self, x_type, record, packet, ofs):
+        if x_type == self.match_query_to_int('A'):
+            pass
+        elif x_type == self.match_query_to_int('NS'):
+            pass
+        elif x_type == self.match_query_to_int("MX"):
+            pass
+        elif x_type == self.match_query_to_int("CNAME"):
+            pass
+
+    def parse_sections(self, packet, count, ofs, AA):
+        section = struct.Struct("!2H")
+        ttl_format = struct.Struct("!I")
+        rd_format = struct.Struct("!H")
+        records = []
+        authorization = 'auth' if AA else 'noauth'
+        while count != 0:
+            a_name, a_type, a_class, a_ofs = self.get_name_type_class(
+                packet, ofs, section)
+            ofs += section.size
+            ttl, ofs = self.format_unpack(ttl_format, packet, ofs)
+            rdlength, ofs = self.format_unpack(rd_format, packet, ofs)
+            record = self.build_default_record(
+                authorization, a_name, a_type, a_class, ttl, rdlength)
+            new_record, ofs = self.check_type(a_type, record, packet, ofs)
+            records.append(new_record)
+            count -= 1
+        return records, ofs
+
+    def parse_questions(self, packet, count, ofs):
+        section = struct.Struct("!2H")
+        questions = []
+        for i in range(count):
+            question_name, question_type, question_class, question_ofs = self.get_name_type_class(
+                packet, ofs, section)
+            new_question = {
+                "question_name": question_name,
+                "question_type": question_type,
+                "question_class": question_class
+            }
+            questions.append(new_question)
+        return questions, question_ofs + section.size
 
     def convert_bytes_to_qname(self, bytes):
         # not sure this actually works with number in url
@@ -154,6 +202,10 @@ class DNS_CLIENT:
             elif i != 0:
                 qname += "."
         return qname
+
+    def unpack_header(self, rcvPacket):
+        header = struct.Struct("!6H")
+        return header.unpack_from(rcvPacket)
 
     def construct_header(self):
         header = bytes()
@@ -219,22 +271,21 @@ class DNS_CLIENT:
         else:
             return 'A'
 
-    def print_response(self, response):
-        ancount = response['ancount']
-        arcount = response['arcount']
-
-        if ancount + arcount <= 0:
-            print("NOT FOUND")
-            return
-
-        if ancount > 0:
-            print("***Answer Section (" + ancount + " records)***")
-            for answer in response['answers']:
-                print(str(answer))
-
-        print()
-
-        if arcount > 0:
-            print("***Additional Section (" + arcount + " records)***")
-            for add in response['additional']:
-                print(str(add))
+    # refactor this
+    def parse_labels(self, packet, ofs):
+        parsed_labels = []
+        x = 0xC0
+        while True:
+            packet_len, = struct.unpack_from("!B", packet, ofs)
+            if (packet_len & x) == x:
+                ptr, = struct.unpack_from("!H", packet, ofs)
+                ofs += 2
+                return (list(parsed_labels) + list(self.parse_labels(packet, ptr & 0x3FFF))), ofs
+            if (packet_len & x) != 0:
+                raise StandardError("unknown label encoding")
+            ofs += 1
+            if packet_len == 0:
+                return parsed_labels, ofs
+            parsed_labels.append(*struct.unpack_from("!%ds" %
+                                                     packet_len, packet, ofs))
+            ofs += packet_len

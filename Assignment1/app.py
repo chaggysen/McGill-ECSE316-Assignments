@@ -3,7 +3,6 @@ from client_dns import DNS_CLIENT
 
 
 def __main__():
-    print("Hello World")
     args = set_arguments()
     print(args)
     DNS_CLIENT(args)

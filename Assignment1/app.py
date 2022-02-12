@@ -4,7 +4,6 @@ from client_dns import DNS_CLIENT
 
 def __main__():
     args = set_arguments()
-    print(args)
     DNS_CLIENT(args)
 
 

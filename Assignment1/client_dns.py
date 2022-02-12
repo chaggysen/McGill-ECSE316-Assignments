@@ -32,7 +32,7 @@ class DNS_CLIENT:
             print(requestDescription)
 
         if retries > self.MAXRETRIES:
-            print("Maximum retries reached. Exiting...")
+            print("ERROR \t Maximum number of retries (" + str(self.MAXRETRIES) +  ") exceeded")
             return
 
         try:
@@ -56,10 +56,6 @@ class DNS_CLIENT:
             end = time.time()
             clientSocket.close()
 
-            print("Packet received")
-            print(receivePacket)
-            print(receiveaAddress)
-
             print("Response received after " + str(end - start) +
                   " seconds " + "(" + str(retries - 1) + " retries)")
 
@@ -70,7 +66,7 @@ class DNS_CLIENT:
             print("Timeout reached. Retrying...")
             self.send_query(retries + 1)
         except socket.error as msg:
-            print("Error: " + str(msg))
+            print("ERROR \t" + str(msg))
             return
 
     def print_response(self, response):

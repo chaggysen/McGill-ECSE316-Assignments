@@ -32,7 +32,8 @@ class DNS_CLIENT:
             print(requestDescription)
 
         if retries > self.MAXRETRIES:
-            print("ERROR\t Maximum number of retries (" + str(self.MAXRETRIES) +  ") exceeded")
+            print("ERROR\t Maximum number of retries (" +
+                  str(self.MAXRETRIES) + ") exceeded")
             return
 
         try:
@@ -41,8 +42,6 @@ class DNS_CLIENT:
             clientSocket.settimeout(self.timeout)
 
             sendData = self.constructRequest(self.name, self.qType)
-            print("Data sent:")
-            print(sendData)
             receiveData = bytearray(1024)
 
             # Setting up packets
@@ -70,22 +69,22 @@ class DNS_CLIENT:
             return
 
     def print_response(self, response):
-        ancount = response['ancount']
-        arcount = response['arcount']
+        ancount = response['an_count']
+        arcount = response['ar_count']
 
         if ancount + arcount <= 0:
             print("NOT FOUND")
             return
 
         if ancount > 0:
-            print("***Answer Section (" + ancount + " records)***")
+            print("***Answer Section (" + str(ancount) + " records)***")
             for answer in response['answers']:
                 print(answer)
 
         print()
 
         if arcount > 0:
-            print("***Additional Section (" + arcount + " records)***")
+            print("***Additional Section (" + str(arcount) + " records)***")
             for add in response['additional']:
                 print(add)
 
@@ -94,27 +93,33 @@ class DNS_CLIENT:
         # Unpack header
         ID, flags, QD_COUNT, AN_COUNT, NS_COUNT, AR_COUNT = self.unpack_header(
             rcvPacket)
-        print("id: " + str(ID))
-        print("flags: " + str(flags))
-        print("qdcount: " + str(QD_COUNT))
-        print("ancount: " + str(AN_COUNT))
-        print("nscount: " + str(NS_COUNT))
-        print("arcount: " + str(AR_COUNT))
 
-        # Non-autoritative response
-        AA = (flags & 0x0400) != 0
         # Header offset
         header_offset = 12
 
+        # Non-autoritative response
+        AA = (flags & 0x0400) != 0
+
         questions, question_offset = self.parse_questions(
             rcvPacket, QD_COUNT, header_offset)
-        print(questions)
         answers, answer_offset = self.parse_answers(
             rcvPacket, AN_COUNT, question_offset, AA)
-        # authoritatives, autho_offset = self.parse_autho(
-        #     rcvPacket, NS_COUNT, answer_offset, AA)
-        # additionals, addi_offset = self.parse_addi(
-        #     rcvPacket, AR_COUNT, autho_offset, AA)
+        authoritatives, autho_offset = self.parse_autho(
+            rcvPacket, NS_COUNT, answer_offset, AA)
+        additionals, addi_offset = self.parse_addi(
+            rcvPacket, AR_COUNT, autho_offset, AA)
+        output = {
+            'id': ID,
+            'aa': AA,
+            'qd_count': QD_COUNT,
+            'an_count': AN_COUNT,
+            'ns_count': NS_COUNT,
+            'ar_count': AR_COUNT,
+            'questions': questions,
+            'answers': answers,
+            'additional': additionals
+        }
+        return output
 
     def parse_answers(self, packet, count, ofs, AA):
         return self.parse_sections(packet, count, ofs, AA)
@@ -146,15 +151,38 @@ class DNS_CLIENT:
             "rdlength": rdlength
         }
 
+    def get_ip(self, packet, ofs):
+        v1, v2, v3, v4 = struct.unpack_from("!4B", packet, ofs)
+        ip_value = "" + str(v1) + '.' + str(v2) + '.' + str(v3) + '.' + str(v4)
+        return ip_value
+
+    def update_record(self, record, attribute, value):
+        record[attribute] = value
+        return record
+
     def check_type(self, x_type, record, packet, ofs):
         if x_type == self.match_query_to_int('A'):
-            pass
+            IP_OFFSET = 4
+            ip_value = self.get_ip(packet, ofs)
+            new_record = self.update_record(record, "address", ip_value)
+            ofs += IP_OFFSET
+            return [self.format_a_record(
+                    new_record['address'], new_record['ttl'], new_record['auth']), ofs]
         elif x_type == self.match_query_to_int('NS'):
-            pass
+            ns, new_ofs = self.parse_labels(packet, ofs)
+            new_record = self.update_record(record, 'name_server', ns)
+            return [self.format_ns_record(new_record['name_server'], new_record['ttl'], new_record['auth']), new_ofs]
         elif x_type == self.match_query_to_int("MX"):
-            pass
+            pref_format = struct.Struct("!H")
+            pref_val, ofs = self.format_unpack(pref_format, packet, ofs)
+            exch_val, ofs = self.parse_labels(packet, ofs)
+            record = self.update_record(record, "preference", pref_val)
+            record = self.update_record(record, "exchange", exch_val)
+            return [self.format_mx_record(record['exchange'], record['preference'], record['ttl'], record['auth']), new_ofs]
         elif x_type == self.match_query_to_int("CNAME"):
-            pass
+            c_name_val, ofs = self.parse_labels(packet, ofs)
+            record = self.update_record(record, "cname", c_name_val)
+            return [self.format_cname_record(record['cname'], record['ttl'], record['auth']), ofs]
 
     def parse_sections(self, packet, count, ofs, AA):
         section = struct.Struct("!2H")
@@ -163,7 +191,7 @@ class DNS_CLIENT:
         records = []
         authorization = 'auth' if AA else 'noauth'
         while count != 0:
-            a_name, a_type, a_class, a_ofs = self.get_name_type_class(
+            a_name, a_type, a_class, ofs = self.get_name_type_class(
                 packet, ofs, section)
             ofs += section.size
             ttl, ofs = self.format_unpack(ttl_format, packet, ofs)

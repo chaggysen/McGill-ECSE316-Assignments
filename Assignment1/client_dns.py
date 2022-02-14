@@ -3,7 +3,6 @@ import time
 import struct
 import random
 
-
 class DNS_CLIENT:
     def __init__(self, args):
         self.parseCommandArguments(args)
@@ -41,7 +40,7 @@ class DNS_CLIENT:
             clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             clientSocket.settimeout(self.timeout)
 
-            sendData = self.constructRequest(self.name, self.qType)
+            sendData = self.construct_request(self.name, self.qType)
             receiveData = bytearray(1024)
 
             # Setting up packets
@@ -58,7 +57,7 @@ class DNS_CLIENT:
             print("Response received after " + str(end - start) +
                   " seconds " + "(" + str(retries - 1) + " retries)")
 
-            res = self.refactor_response(receivePacket, len(sendData))
+            res = self.refactor_response(receivePacket)
             self.print_response(res)
 
         except socket.timeout as msg:
@@ -85,10 +84,63 @@ class DNS_CLIENT:
 
         if arcount > 0:
             print("***Additional Section (" + str(arcount) + " records)***")
-            for add in response['additional']:
+            for add in response['additionals']:
                 print(add)
 
-    def refactor_response(self, rcvPacket, lenSent):
+    # ------------- Request Section -------------
+
+    def construct_header(self):
+        header = bytes()
+        # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
+        items = [random.getrandbits(16), 256, 1, 0, 0, 0]
+        for item in items:
+            header += struct.pack(">H", item)
+        return header
+
+    def construct_question(self, name):
+        question = bytes()
+        url_parts = name.split('.')
+        for label in url_parts:
+            # a label with n char follows
+            question += struct.pack('B', len(label))
+            for char in label:
+                question += struct.pack('c', char.encode('utf-8'))
+        return question
+
+    def construct_footer(self, q_type):
+        QNAME_end, Q_Class = 0, 1
+        footer = bytes()
+        footer += struct.pack('B', QNAME_end)
+        footer += struct.pack('>H', self.match_query_to_int(q_type))
+        footer += struct.pack(">H", Q_Class)
+        return footer
+
+    def construct_request(self, name, q_type):
+        request = bytes()
+        header = self.construct_header()
+        question = self.construct_question(name)
+        footer = self.construct_footer(q_type)
+        request += (header + question + footer)
+        return request
+
+    def match_query_to_int(self, q_type):
+        q_type_dict = {
+            'A': 1,
+            'NS': 2,
+            'CNAME': 5,
+            'SOA': 6,
+            'HINFO': 13,
+            'MX': 15,
+            "OTHER": 100
+        }
+        if q_type in q_type_dict:
+            return q_type_dict[q_type]
+        else:
+            return q_type_dict['A']
+
+    # ------------- Response Section -------------
+
+    def refactor_response(self, rcvPacket):
 
         # Unpack header
         ID, flags, QD_COUNT, AN_COUNT, NS_COUNT, AR_COUNT = self.unpack_header(
@@ -117,9 +169,23 @@ class DNS_CLIENT:
             'ar_count': AR_COUNT,
             'questions': questions,
             'answers': answers,
-            'additional': additionals
+            'additionals': additionals
         }
         return output
+
+    def parse_questions(self, packet, count, ofs):
+        section = struct.Struct("!2H")
+        questions = []
+        for i in range(count):
+            question_name, question_type, question_class, question_ofs = self.get_name_type_class(
+                packet, ofs, section)
+            new_question = {
+                "question_name": question_name,
+                "question_type": question_type,
+                "question_class": question_class
+            }
+            questions.append(new_question)
+        return questions, question_ofs + section.size
 
     def parse_answers(self, packet, count, ofs, AA):
         return self.parse_sections(packet, count, ofs, AA)
@@ -139,17 +205,6 @@ class DNS_CLIENT:
         unpack, = struct_format.unpack_from(packet, ofs)
         new_ofs = ofs + struct_format.size
         return [unpack, new_ofs]
-
-    def build_default_record(self, authorization, a_name, a_type, a_class, ttl, rdlength):
-        return {
-            # change name :))))))))))))))) !!!!!!!!!!!!!!!!!!!!!!!! OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-            "auth": authorization,
-            "domain_name": a_name,
-            "query_type": a_type,
-            "query_class": a_class,
-            "ttl": ttl,
-            "rdlength": rdlength
-        }
 
     def get_ip(self, packet, ofs):
         v1, v2, v3, v4 = struct.unpack_from("!4B", packet, ofs)
@@ -178,11 +233,27 @@ class DNS_CLIENT:
             exch_val, ofs = self.parse_labels(packet, ofs)
             record = self.update_record(record, "preference", pref_val)
             record = self.update_record(record, "exchange", exch_val)
-            return [self.format_mx_record(record['exchange'], record['preference'], record['ttl'], record['auth']), new_ofs]
+            return [self.format_mx_record(record['exchange'], record['preference'], record['ttl'], record['auth']), ofs]
         elif x_type == self.match_query_to_int("CNAME"):
             c_name_val, ofs = self.parse_labels(packet, ofs)
             record = self.update_record(record, "cname", c_name_val)
             return [self.format_cname_record(record['cname'], record['ttl'], record['auth']), ofs]
+        else:
+            rdlength = record['rdlength']
+            rdata = packet[ofs:ofs+rdlength]
+            ofs += rdlength
+            new_record = self.update_record(record, "rdata", rdata)
+            return [self.format_other_record(new_record['d_name'], new_record['ttl'], new_record['auth']), ofs]
+
+    def build_default_record(self, authorization, a_name, a_type, a_class, ttl, rdlength):
+        return {
+            "auth": authorization,
+            "d_name": a_name,
+            "query_type": a_type,
+            "query_class": a_class,
+            "ttl": ttl,
+            "rdlength": rdlength
+        }
 
     def parse_sections(self, packet, count, ofs, AA):
         section = struct.Struct("!2H")
@@ -203,6 +274,30 @@ class DNS_CLIENT:
             count -= 1
         return records, ofs
 
+        
+    def unpack_header(self, rcvPacket):
+        header = struct.Struct("!6H")
+        return header.unpack_from(rcvPacket)
+
+    # refactor this TODO
+    def parse_labels(self, packet, ofs):
+        parsed_labels = []
+        x = 0xC0
+        while True:
+            packet_len, = struct.unpack_from("!B", packet, ofs)
+            if (packet_len & x) == x:
+                ptr, = struct.unpack_from("!H", packet, ofs)
+                ofs += 2
+                return (list(parsed_labels) + list(self.parse_labels(packet, ptr & 0x3FFF))), ofs
+            ofs += 1
+            if packet_len == 0:
+                return parsed_labels, ofs
+            parsed_labels.append(*struct.unpack_from("!%ds" %
+                                                     packet_len, packet, ofs))
+            ofs += packet_len
+
+    # ----------------- Response Formatting -----------------
+
     def flatten(self, lst):
         if lst == []:
             return lst
@@ -215,126 +310,24 @@ class DNS_CLIENT:
 
     def format_cname_record(self, cname, ttl, auth):
         flattened = self.flatten(cname)
+        flattened = [x for x in flattened if not isinstance(x, int)]
         flattened = b'.'.join(flattened).decode('utf-8')
         return "CNAME\t" + flattened + "\t" + str(ttl) + "\t" + auth
 
     def format_mx_record(self, exchange, preference, ttl, auth):
         flattened = self.flatten(exchange)
+        flattened = [x for x in flattened if not isinstance(x, int)]
         flattened = b'.'.join(flattened).decode('utf-8')
         return "MX\t" + flattened + "\t" + str(preference) + "\t" + str(ttl) + "\t" + auth
 
     def format_ns_record(self, name_server, ttl, auth):
         flattened = self.flatten(name_server)
+        flattened = [x for x in flattened if not isinstance(x, int)]
         flattened = b'.'.join(flattened).decode('utf-8')
         return "NS\t" + flattened + "\t" + str(ttl) + "\t" + auth
 
-    def parse_questions(self, packet, count, ofs):
-        section = struct.Struct("!2H")
-        questions = []
-        for i in range(count):
-            question_name, question_type, question_class, question_ofs = self.get_name_type_class(
-                packet, ofs, section)
-            new_question = {
-                "question_name": question_name,
-                "question_type": question_type,
-                "question_class": question_class
-            }
-            questions.append(new_question)
-        return questions, question_ofs + section.size
-
-    def convert_bytes_to_qname(self, bytes):
-        # not sure this actually works with number in url
-        qname = ""
-        for i in range(len(bytes)):
-            if bytes[i:i+1].isalpha():
-                qname += chr(bytes[i])
-            elif i != 0:
-                qname += "."
-        return qname
-
-    def unpack_header(self, rcvPacket):
-        header = struct.Struct("!6H")
-        return header.unpack_from(rcvPacket)
-
-    def construct_header(self):
-        header = bytes()
-        # id, flags, QD_Count, AN_Count, NS_Count, AR_Count
-        items = [random.getrandbits(16), 256, 1, 0, 0, 0]
-        for item in items:
-            header += struct.pack(">H", item)
-        return header
-
-    def construct_question(self, name):
-        question = bytes()
-        url_parts = name.split('.')
-        for label in url_parts:
-            # a label with n char follows
-            question += struct.pack('B', len(label))
-            for char in label:
-                question += struct.pack('c', char.encode('utf-8'))
-        return question
-
-    def construct_footer(self, q_type):
-        QNAME_end, Q_Class = 0, 1
-        footer = bytes()
-        footer += struct.pack('B', QNAME_end)
-        footer += struct.pack('>H', self.match_query_to_int(q_type))
-        footer += struct.pack(">H", Q_Class)
-        return footer
-
-    def constructRequest(self, name, q_type):
-        request = bytes()
-        header = self.construct_header()
-        question = self.construct_question(name)
-        footer = self.construct_footer(q_type)
-        request += (header + question + footer)
-        return request
-
-    def match_query_to_int(self, q_type):
-        q_type_dict = {
-            'A': 1,
-            'NS': 2,
-            'CNAME': 5,
-            'SOA': 6,
-            'HINFO': 13,
-            'MX': 15,
-            "OTHER": 100
-        }
-        if q_type in q_type_dict:
-            return q_type_dict[q_type]
-        else:
-            return q_type_dict['A']
-
-    def match_type_to_query(self, type):
-        type_dict = {
-            1: 'A',
-            2: 'NS',
-            5: 'CNAME',
-            6: 'SOA',
-            13: 'HINFO',
-            15: 'MX',
-            100: 'OTHER'
-        }
-        if type in type_dict:
-            return type_dict[type]
-        else:
-            return 'A'
-
-    # refactor this
-    def parse_labels(self, packet, ofs):
-        parsed_labels = []
-        x = 0xC0
-        while True:
-            packet_len, = struct.unpack_from("!B", packet, ofs)
-            if (packet_len & x) == x:
-                ptr, = struct.unpack_from("!H", packet, ofs)
-                ofs += 2
-                return (list(parsed_labels) + list(self.parse_labels(packet, ptr & 0x3FFF))), ofs
-            if (packet_len & x) != 0:
-                raise StandardError("unknown label encoding")
-            ofs += 1
-            if packet_len == 0:
-                return parsed_labels, ofs
-            parsed_labels.append(*struct.unpack_from("!%ds" %
-                                                     packet_len, packet, ofs))
-            ofs += packet_len
+    def format_other_record(self, name, ttl, auth):
+        flattened = self.flatten(name)
+        flattened = [x for x in flattened if not isinstance(x, int)]
+        flattened = b'.'.join(flattened).decode('utf-8')
+        return "OTHER\t" + flattened + "\t" + str(ttl) + "\t" + auth

@@ -3,6 +3,7 @@ import time
 import struct
 import random
 
+
 class DNS_CLIENT:
     def __init__(self, args):
         self.parseCommandArguments(args)
@@ -77,14 +78,14 @@ class DNS_CLIENT:
 
         if ancount > 0:
             print("***Answer Section (" + str(ancount) + " records)***")
-            for answer in response['answers']:
+            for answer in response['answer_records']:
                 print(answer)
 
         print()
 
         if arcount > 0:
             print("***Additional Section (" + str(arcount) + " records)***")
-            for add in response['additionals']:
+            for add in response['additional_records']:
                 print(add)
 
     # ------------- Request Section -------------
@@ -162,14 +163,14 @@ class DNS_CLIENT:
             rcvPacket, AR_COUNT, autho_offset, AA)
         output = {
             'id': ID,
-            'aa': AA,
             'qd_count': QD_COUNT,
             'an_count': AN_COUNT,
             'ns_count': NS_COUNT,
             'ar_count': AR_COUNT,
-            'questions': questions,
-            'answers': answers,
-            'additionals': additionals
+            'question_records': questions,
+            'answer_records': answers,
+            'additional_records': additionals,
+            'aa': AA
         }
         return output
 
@@ -179,11 +180,8 @@ class DNS_CLIENT:
         for i in range(count):
             question_name, question_type, question_class, question_ofs = self.get_name_type_class(
                 packet, ofs, section)
-            new_question = {
-                "question_name": question_name,
-                "question_type": question_type,
-                "question_class": question_class
-            }
+            new_question = self.create_question(
+                question_name, question_type, question_class)
             questions.append(new_question)
         return questions, question_ofs + section.size
 
@@ -210,6 +208,10 @@ class DNS_CLIENT:
         v1, v2, v3, v4 = struct.unpack_from("!4B", packet, ofs)
         ip_value = "" + str(v1) + '.' + str(v2) + '.' + str(v3) + '.' + str(v4)
         return ip_value
+
+    def valid_length(self, length):
+        x = 0xC0
+        return (length & x) == x
 
     def update_record(self, record, attribute, value):
         record[attribute] = value
@@ -239,21 +241,29 @@ class DNS_CLIENT:
             record = self.update_record(record, "cname", c_name_val)
             return [self.format_cname_record(record['cname'], record['ttl'], record['auth']), ofs]
         else:
-            rdlength = record['rdlength']
-            rdata = packet[ofs:ofs+rdlength]
-            ofs += rdlength
+            rdata = packet[ofs:ofs+record['rd_length']]
+            ofs += record['rd_length']
             new_record = self.update_record(record, "rdata", rdata)
             return [self.format_other_record(new_record['d_name'], new_record['ttl'], new_record['auth']), ofs]
 
     def build_default_record(self, authorization, a_name, a_type, a_class, ttl, rdlength):
-        return {
+        default_record = {
             "auth": authorization,
             "d_name": a_name,
-            "query_type": a_type,
-            "query_class": a_class,
+            "q_class": a_class,
+            "q_type": a_type,
             "ttl": ttl,
-            "rdlength": rdlength
+            "rd_length": rdlength
         }
+        return default_record
+
+    def create_question(self, q_name, q_type, q_class):
+        new_question = {
+            "question_name": q_name,
+            "question_type": q_type,
+            "question_class": q_class
+        }
+        return new_question
 
     def parse_sections(self, packet, count, ofs, AA):
         section = struct.Struct("!2H")
@@ -274,24 +284,24 @@ class DNS_CLIENT:
             count -= 1
         return records, ofs
 
-        
     def unpack_header(self, rcvPacket):
         header = struct.Struct("!6H")
         return header.unpack_from(rcvPacket)
 
-    # refactor this TODO
     def parse_labels(self, packet, ofs):
         parsed_labels = []
-        x = 0xC0
+        label_format = struct.Struct("!H")
+        y = 0x3FFF
         while True:
             packet_len, = struct.unpack_from("!B", packet, ofs)
-            if (packet_len & x) == x:
-                ptr, = struct.unpack_from("!H", packet, ofs)
-                ofs += 2
-                return (list(parsed_labels) + list(self.parse_labels(packet, ptr & 0x3FFF))), ofs
+            if self.valid_length(packet_len):
+                ptr, ofs = self.format_unpack(label_format, packet, ofs)
+                l1, l2 = list(parsed_labels), list(
+                    self.parse_labels(packet, ptr & y))
+                return [(l1 + l2), ofs]
             ofs += 1
-            if packet_len == 0:
-                return parsed_labels, ofs
+            if 0 == packet_len:
+                return [parsed_labels, ofs]
             parsed_labels.append(*struct.unpack_from("!%ds" %
                                                      packet_len, packet, ofs))
             ofs += packet_len

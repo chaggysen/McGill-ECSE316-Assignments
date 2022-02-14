@@ -6,10 +6,10 @@ import random
 
 class DNS_CLIENT:
     def __init__(self, args):
-        self.parseCommandArguments(args)
+        self.parse_command_arguments(args)
         self.send_query(1)
 
-    def parseCommandArguments(self, args):
+    def parse_command_arguments(self, args):
         self.timeout = args.TIMEOUT
         self.MAXRETRIES = args.MAXRETRY
         self.port = args.PORT
@@ -51,7 +51,7 @@ class DNS_CLIENT:
             # measure the time taken to send and receive query
             start = time.time()
             clientSocket.sendto(sendData, clientPacket)
-            receivePacket, receiveaAddress = clientSocket.recvfrom(1024)
+            receivePacket, receiveAddress = clientSocket.recvfrom(1024)
             end = time.time()
             clientSocket.close()
 
@@ -72,7 +72,7 @@ class DNS_CLIENT:
         ancount = response['an_count']
         arcount = response['ar_count']
 
-        if ancount + arcount <= 0:
+        if ancount + arcount <= 0 or response['rcode'] == 3:
             print("NOT FOUND")
             return
 
@@ -142,7 +142,6 @@ class DNS_CLIENT:
     # ------------- Response Section -------------
 
     def refactor_response(self, rcvPacket):
-
         # Unpack header
         ID, flags, QD_COUNT, AN_COUNT, NS_COUNT, AR_COUNT = self.unpack_header(
             rcvPacket)
@@ -153,7 +152,19 @@ class DNS_CLIENT:
         # Non-autoritative response
         AA = (flags & 0x0400) != 0
 
-        questions, question_offset = self.parse_questions(
+        # Response code
+        RCODE = flags & 0x000F
+
+        # Recursion available
+        RA = (flags & 0x0080) != 0
+
+        if RCODE != 0 and RCODE != 3:
+            print("ERROR\t" + "Invalid response code: " + str(RCODE))
+
+        if RA == False:
+            print("ERROR\t" + "Recursion not available")
+
+        question_offset = self.parse_questions(
             rcvPacket, QD_COUNT, header_offset)
         answers, answer_offset = self.parse_answers(
             rcvPacket, AN_COUNT, question_offset, AA)
@@ -162,28 +173,23 @@ class DNS_CLIENT:
         additionals, addi_offset = self.parse_addi(
             rcvPacket, AR_COUNT, autho_offset, AA)
         output = {
-            'id': ID,
-            'qd_count': QD_COUNT,
             'an_count': AN_COUNT,
-            'ns_count': NS_COUNT,
             'ar_count': AR_COUNT,
-            'question_records': questions,
             'answer_records': answers,
             'additional_records': additionals,
-            'aa': AA
+            'aa': AA,
+            'rcode': RCODE,
         }
         return output
 
     def parse_questions(self, packet, count, ofs):
         section = struct.Struct("!2H")
-        questions = []
         for i in range(count):
             question_name, question_type, question_class, question_ofs = self.get_name_type_class(
                 packet, ofs, section)
-            new_question = self.create_question(
-                question_name, question_type, question_class)
-            questions.append(new_question)
-        return questions, question_ofs + section.size
+            if question_class != 1:
+                print("ERROR\t" + "Invalid question class")
+        return question_ofs + section.size
 
     def parse_answers(self, packet, count, ofs, AA):
         return self.parse_sections(packet, count, ofs, AA)
@@ -209,7 +215,7 @@ class DNS_CLIENT:
         ip_value = "" + str(v1) + '.' + str(v2) + '.' + str(v3) + '.' + str(v4)
         return ip_value
 
-    def valid_length(self, length):
+    def is_pointer(self, length):
         x = 0xC0
         return (length & x) == x
 
@@ -257,14 +263,6 @@ class DNS_CLIENT:
         }
         return default_record
 
-    def create_question(self, q_name, q_type, q_class):
-        new_question = {
-            "question_name": q_name,
-            "question_type": q_type,
-            "question_class": q_class
-        }
-        return new_question
-
     def parse_sections(self, packet, count, ofs, AA):
         section = struct.Struct("!2H")
         ttl_format = struct.Struct("!I")
@@ -274,6 +272,8 @@ class DNS_CLIENT:
         while count != 0:
             a_name, a_type, a_class, ofs = self.get_name_type_class(
                 packet, ofs, section)
+            if a_class != 1:
+                print("ERROR\t" + "Invalid answer class")
             ofs += section.size
             ttl, ofs = self.format_unpack(ttl_format, packet, ofs)
             rdlength, ofs = self.format_unpack(rd_format, packet, ofs)
@@ -294,7 +294,7 @@ class DNS_CLIENT:
         y = 0x3FFF
         while True:
             packet_len, = struct.unpack_from("!B", packet, ofs)
-            if self.valid_length(packet_len):
+            if self.is_pointer(packet_len):
                 ptr, ofs = self.format_unpack(label_format, packet, ofs)
                 l1, l2 = list(parsed_labels), list(
                     self.parse_labels(packet, ptr & y))

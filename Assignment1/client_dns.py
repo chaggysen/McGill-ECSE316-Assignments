@@ -129,8 +129,6 @@ class DNS_CLIENT:
             'A': 1,
             'NS': 2,
             'CNAME': 5,
-            'SOA': 6,
-            'HINFO': 13,
             'MX': 15,
             "OTHER": 100
         }
@@ -177,7 +175,6 @@ class DNS_CLIENT:
             'ar_count': AR_COUNT,
             'answer_records': answers,
             'additional_records': additionals,
-            'aa': AA,
             'rcode': RCODE,
         }
         return output

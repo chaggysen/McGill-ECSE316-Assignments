@@ -5,7 +5,6 @@ from fourier_transform import FOURIER_TRANSFORM
 def __main__():
     args = set_arguments()
     FOURIER_TRANSFORM(args)
-    
 
 def set_arguments():
     parser = argparse.ArgumentParser(description="Fourier Transform!")

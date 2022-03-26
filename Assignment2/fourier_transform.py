@@ -85,6 +85,80 @@ class FOURIER_TRANSFORM:
                         f[m,n] += 1/(N*M)*F[k,l]*np.exp(2j*np.pi/M*k*m)*np.exp(2j*np.pi/N*l*n)
         return f
 
+    def fft_1d(self, x):
+        x = np.asarray(x, dtype=complex)
+        N = x.shape[0]
+        X = np.zeros(N, dtype=complex)
+        if N % 2 != 0:
+            raise ValueError("size of x must be a power of 2")
+        # if the array is small enough, use the naive method
+        if N <= 16:
+            X = self.dft_naive_1d(x)
+        else:
+            # split the array into two halves
+            X_even = self.fft_1d(x[::2])
+            X_odd = self.fft_1d(x[1::2])
+            # compute the sum of the two halves
+            half = N//2
+            for k in range(half):
+                # x[k] = (X_even[k % half] + np.exp(-2j*np.pi/N*k)*X_odd[k % half])
+                p = X_even[k]
+                q = np.exp(-2j*np.pi/N*k)*X_odd[k]
+                X[k] = p + q
+                X[k+half] = p - q
+        return X
+
+    def fft_inverse_1d(self, X):
+        X = np.asarray(X, dtype=complex)
+        N = X.shape[0]
+        x = np.zeros(N, dtype=complex)
+        if N % 2 != 0:
+            raise ValueError("size of X must be a power of 2")
+        # if the array is small enough, use the naive method
+        if N <= 16:
+            x = self.dft_inverse_1d(X)
+        else:
+            # split the array into two halves
+            X_even = self.fft_inverse_1d(X[::2])
+            X_odd = self.fft_inverse_1d(X[1::2])
+            # compute the sum of the two halves
+            half = N//2
+            for k in range(half):
+                #x[k] = (X_even[k % half] + np.exp(2j*np.pi/N*k)*X_odd[k % half])/2
+                p = 1/2*X_even[k]
+                q = 1/2*np.exp(2j*np.pi/N*k)*X_odd[k]
+                x[k] = p + q
+                x[k+half] = p - q
+        return x
+
+    def fft_2d(self, f):
+        f = np.asarray(f, dtype=complex)
+        M = f.shape[0]
+        N = f.shape[1]
+        F = np.zeros((M, N), dtype=complex)
+        
+        # use fft_1d to compute the FFT of each column
+        for n in range(N):
+            F[:,n] = self.fft_1d(f[:,n])
+        # use fft_1d to compute the FFT of each row
+        for m in range(M):
+            F[m,:] = self.fft_1d(F[m,:])
+        return F
+
+    def fft_inverse_2d(self, F):
+        F = np.asarray(F, dtype=complex)
+        M = F.shape[0]
+        N = F.shape[1]
+        f = np.zeros((M, N), dtype=complex)
+        
+        # use fft_inverse_1d to compute the inverse FFT of each column
+        for n in range(N):
+            f[:,n] = self.fft_inverse_1d(F[:,n])
+        # use fft_inverse_1d to compute the inverse FFT of each row
+        for m in range(M):
+            f[m,:] = self.fft_inverse_1d(f[m,:])
+        return f
+
     def display(self, image):
         # Display the image
         plt.imshow(image, cmap='gray', norm=LogNorm())
@@ -95,4 +169,10 @@ class FOURIER_TRANSFORM:
         print(np.allclose(self.dft_naive_2d([[1,2],[3,4],[5,6]]), np.fft.fft2([[1,2],[3,4],[5,6]])))
         print(np.allclose(self.dft_inverse_1d([1,2,3,4,5,6]), np.fft.ifft([1,2,3,4,5,6])))
         print(np.allclose(self.dft_inverse_2d([[1,2],[3,4],[5,6]]), np.fft.ifft2([[1,2],[3,4],[5,6]])))
+        x = np.random.rand(64)
+        print(np.allclose(self.fft_1d(x), np.fft.fft(x)))
+        print(np.allclose(self.fft_inverse_1d(x), np.fft.ifft(x)))
+        y = np.random.rand(64, 64)
+        print(np.allclose(self.fft_2d(y), np.fft.fft2(y)))
+        print(np.allclose(self.fft_inverse_2d(y), np.fft.ifft2(y)))
         #self.display(abs(np.fft.fft2(self.image)))

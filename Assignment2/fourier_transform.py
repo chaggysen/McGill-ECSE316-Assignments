@@ -1,4 +1,4 @@
-import time
+from time import time
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
@@ -17,18 +17,6 @@ class FOURIER_TRANSFORM:
             self.perform_compression(self.image)
         elif(self.mode == 4):
             self.perform_runtime_analysis()
-
-    def perform_fft(self, image):
-        pass
-
-    def perform_denoising(self, image):
-        pass
-
-    def perform_compression(self, image):
-        pass
-
-    def perform_runtime_analysis(self):
-        pass
 
     def dft_naive(self, x):
         # Computes DFT of 1D array x
@@ -163,6 +151,50 @@ class FOURIER_TRANSFORM:
         # Display the image
         plt.imshow(image, cmap='gray', norm=LogNorm())
         plt.show()
+
+    def closest_power_of_2(self, n):
+        # Find the closest power of 2
+        return 2**(n-1).bit_length()
+
+    def perform_fft(self, image):
+        pass
+
+    def perform_denoising(self, image):
+        # Output a one by two subplot where the first subplot is the original image and the second subplot is the denoised image
+        plt.subplot(1, 2, 1)
+        plt.imshow(image, cmap='gray', norm=LogNorm())
+        plt.title('Original Image')
+
+        # Before doing the FFT, we need to pad the image so that it is a power of 2
+        # The padding is done by adding zeros to the end of the image
+        N = image.shape[0]
+        M = image.shape[1]
+        N_padded = self.closest_power_of_2(N)
+        M_padded = self.closest_power_of_2(M)
+        # pad the image with zeros
+        padded_image = np.zeros((N_padded, M_padded), dtype=complex)
+        padded_image[:N, :M] = image
+
+        # Perform the FFT of the image and set all the high frequency components to zero
+        transformed_image = self.fft_2d(padded_image)
+        fraction = 0.1
+        r, c = transformed_image.shape
+        transformed_image[int(r*fraction):int(r*(1-fraction))] = 0
+        transformed_image[:,int(c*fraction):int(c*(1-fraction))] = 0
+
+        # Perform the inverse FFT of the image
+        denoised_image = self.fft_inverse_2d(transformed_image)
+        denoised_image = denoised_image[:N, :M]
+        plt.subplot(1, 2, 2)
+        plt.imshow(abs(denoised_image), cmap='gray', norm=LogNorm())
+        plt.title('Denoised Image')
+        plt.show()
+
+    def perform_compression(self, image):
+        pass
+
+    def perform_runtime_analysis(self):
+        pass
 
     def test(self):
         print(np.allclose(self.dft_naive_1d([1,2,3,4,5,6]), np.fft.fft([1,2,3,4,5,6])))

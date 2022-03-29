@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from matplotlib.colors import LogNorm
-from utils import Fourier
+from utils import *
 
 
 class FOURIER_TRANSFORM:
@@ -45,8 +45,8 @@ class FOURIER_TRANSFORM:
         padded_image = np.zeros((N_padded, M_padded), dtype=complex)
         padded_image[:N, :M] = image
 
-        # Perform the FFT of the image and set all the high frequency components to zero
-        transformed_image = Fourier.fft_2d(padded_image)
+        # Perform the FFT of the image
+        transformed_image = fft_2d(padded_image)
 
         # Perform the inverse FFT of the image
         plt.subplot(1, 2, 2)
@@ -71,15 +71,22 @@ class FOURIER_TRANSFORM:
         padded_image[:N, :M] = image
 
         # Perform the FFT of the image and set all the high frequency components to zero
-        transformed_image = Fourier.fft_2d(padded_image)
+        transformed_image = fft_2d(padded_image)
         fraction = 0.1
+        print("Fraction used: ", 100*fraction, "%")
         r, c = transformed_image.shape
         transformed_image[int(r*fraction):int(r*(1-fraction))] = 0
         transformed_image[:, int(c*fraction):int(c*(1-fraction))] = 0
 
+        # Print the number of non-zeros you are using and the fraction they represent of the original Fourier coefficients
+        print("Number of non-zeros before converting back to original size: ", np.count_nonzero(transformed_image))
+        print("Fraction before converting back to original size: ", 100*np.count_nonzero(transformed_image)/(r*c), "%")
+
         # Perform the inverse FFT of the image
-        denoised_image = Fourier.fft_inverse_2d(transformed_image)
+        denoised_image = fft_inverse_2d(transformed_image)
         denoised_image = denoised_image[:N, :M]
+        print("Number of non-zeros after converting back to original size: ", np.count_nonzero(denoised_image))
+        print("Fraction after converting back to original size: ", 100*np.count_nonzero(denoised_image)/(N*M), "%")
         plt.subplot(1, 2, 2)
         plt.imshow(abs(denoised_image), cmap='gray', norm=LogNorm())
         plt.title('Denoised Image')
@@ -89,21 +96,74 @@ class FOURIER_TRANSFORM:
         pass
 
     def perform_runtime_analysis(self):
-        pass
+        naive_times = {}
+        fft_times = {}
+        for i in range(5, 9):
+            for j in range(10):
+                N = 2**i
+                M = N
+                image = np.random.rand(N, M)
+                start = time()
+                dft_naive_2d(image)
+                end = time()
+                if i not in naive_times:
+                    naive_times[i] = []
+                naive_times[i].append(end - start)
+                start = time()
+                fft_2d(image)
+                end = time()
+                if i not in fft_times:
+                    fft_times[i] = []
+                fft_times[i].append(end - start)
+
+        xval = []
+        naive_val = []
+        fft_val = []
+        yerr1 = []
+        yerr2 = []
+
+        print("Naive method:")
+        print("")
+        for i in naive_times:
+            print("Size: ", 2**i, "x", 2**i)
+            xval.append("2^" + str(i))
+            print("Mean: ", np.mean(naive_times[i]))
+            naive_val.append(np.mean(naive_times[i]))
+            print("Standard deviation: ", np.std(naive_times[i]))
+            yerr1.append(2*np.std(naive_times[i]))
+            print("")
+
+        print("FFT method:")
+        print("")
+        for i in fft_times:
+            print("Size: ", 2**i, "x", 2**i)
+            print("Mean: ", np.mean(fft_times[i]))
+            fft_val.append(np.mean(fft_times[i]))
+            print("Standard deviation: ", np.std(fft_times[i]))
+            yerr2.append(2*np.std(fft_times[i]))
+            print("")
+
+        plt.title('Runtime Analysis')
+        plt.xlabel('Problem size')
+        plt.ylabel('Runtime (s)')
+        plt.errorbar(xval, naive_val, yerr=yerr1, label='Naive')
+        plt.errorbar(xval, fft_val, yerr=yerr2, label='FFT')
+        plt.legend(loc="upper left")
+        plt.show()
 
     def test(self):
-        print(np.allclose(Fourier.dft_naive_1d(
+        print(np.allclose(dft_naive_1d(
             [1, 2, 3, 4, 5, 6]), np.fft.fft([1, 2, 3, 4, 5, 6])))
-        print(np.allclose(Fourier.dft_naive_2d(
+        print(np.allclose(dft_naive_2d(
             [[1, 2], [3, 4], [5, 6]]), np.fft.fft2([[1, 2], [3, 4], [5, 6]])))
-        print(np.allclose(Fourier.dft_inverse_1d(
+        print(np.allclose(dft_inverse_1d(
             [1, 2, 3, 4, 5, 6]), np.fft.ifft([1, 2, 3, 4, 5, 6])))
-        print(np.allclose(Fourier.dft_inverse_2d(
+        print(np.allclose(dft_inverse_2d(
             [[1, 2], [3, 4], [5, 6]]), np.fft.ifft2([[1, 2], [3, 4], [5, 6]])))
         x = np.random.rand(64)
-        print(np.allclose(Fourier.fft_1d(x), np.fft.fft(x)))
-        print(np.allclose(Fourier.fft_inverse_1d(x), np.fft.ifft(x)))
+        print(np.allclose(fft_1d(x), np.fft.fft(x)))
+        print(np.allclose(fft_inverse_1d(x), np.fft.ifft(x)))
         y = np.random.rand(64, 64)
-        print(np.allclose(Fourier.fft_2d(y), np.fft.fft2(y)))
-        print(np.allclose(Fourier.fft_inverse_2d(y), np.fft.ifft2(y)))
+        print(np.allclose(fft_2d(y), np.fft.fft2(y)))
+        print(np.allclose(fft_inverse_2d(y), np.fft.ifft2(y)))
         # self.display(abs(np.fft.fft2(self.image)))

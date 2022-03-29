@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import cv2
 from matplotlib.colors import LogNorm
 from utils import *
+from scipy.sparse import csr_matrix, save_npz
 
 
 class FOURIER_TRANSFORM:
@@ -79,21 +80,54 @@ class FOURIER_TRANSFORM:
         transformed_image[:, int(c*fraction):int(c*(1-fraction))] = 0
 
         # Print the number of non-zeros you are using and the fraction they represent of the original Fourier coefficients
-        print("Number of non-zeros before converting back to original size: ", np.count_nonzero(transformed_image))
-        print("Fraction before converting back to original size: ", 100*np.count_nonzero(transformed_image)/(r*c), "%")
+        print("Number of non-zeros before converting back to original size: ",
+              np.count_nonzero(transformed_image))
+        print("Fraction before converting back to original size: ",
+              100*np.count_nonzero(transformed_image)/(r*c), "%")
 
         # Perform the inverse FFT of the image
         denoised_image = fft_inverse_2d(transformed_image)
         denoised_image = denoised_image[:N, :M]
-        print("Number of non-zeros after converting back to original size: ", np.count_nonzero(denoised_image))
-        print("Fraction after converting back to original size: ", 100*np.count_nonzero(denoised_image)/(N*M), "%")
+        print("Number of non-zeros after converting back to original size: ",
+              np.count_nonzero(denoised_image))
+        print("Fraction after converting back to original size: ",
+              100*np.count_nonzero(denoised_image)/(N*M), "%")
         plt.subplot(1, 2, 2)
         plt.imshow(abs(denoised_image), cmap='gray', norm=LogNorm())
         plt.title('Denoised Image')
         plt.show()
 
     def perform_compression(self, image):
-        pass
+        # Before doing the FFT, we need to pad the image so that it is a power of 2
+        # The padding is done by adding zeros to the end of the image
+        N = image.shape[0]
+        M = image.shape[1]
+        N_padded = self.closest_power_of_2(N)
+        M_padded = self.closest_power_of_2(M)
+        # pad the image with zeros
+        padded_image = np.zeros((N_padded, M_padded), dtype=complex)
+        padded_image[:N, :M] = image
+        originalCount = N * M
+
+        # define compression levels
+        compression = [0, 14, 30, 50, 70, 95]
+
+        # Perform the FFT of the image
+        transformed_image = fft_2d(padded_image)
+
+        # render
+        fig, ax = plt.subplots(2, 3)
+        for i in range(2):
+            for j in range(3):
+                compression_lvl = compression[i*3 + j]
+                image_compressed = self.compress_image(
+                    transformed_image, compression_lvl, originalCount)
+                ax[i, j].imshow(np.real(image_compressed)[
+                                :N, :M], plt.cm.gray)
+                ax[i, j].set_title('{}% compression'.format(compression_lvl))
+
+        fig.suptitle('Mode 3')
+        plt.show()
 
     def perform_runtime_analysis(self):
         naive_times = {}
@@ -167,3 +201,20 @@ class FOURIER_TRANSFORM:
         print(np.allclose(fft_2d(y), np.fft.fft2(y)))
         print(np.allclose(fft_inverse_2d(y), np.fft.ifft2(y)))
         # self.display(abs(np.fft.fft2(self.image)))
+
+    def compress_image(self, im_fft, compression_level, originalCount):
+        if compression_level < 0 or compression_level > 100:
+            AssertionError('compression_level must be between 0 to 100')
+
+        rest = 100 - compression_level
+        lower = np.percentile(im_fft, rest//2)
+        upper = np.percentile(im_fft, 100 - rest//2)
+        print('non zero values for level {}% are {} out of {}'.format(compression_level, int(
+            originalCount * ((100 - compression_level) / 100.0)), originalCount))
+
+        compressed_im_fft = im_fft * \
+            np.logical_or(im_fft <= lower, im_fft >= upper)
+        save_npz('coefficients-{}-compression.csr'.format(compression_level),
+                 csr_matrix(compressed_im_fft))
+
+        return fft_inverse_2d(compressed_im_fft)

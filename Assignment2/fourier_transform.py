@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import cv2
 from matplotlib.colors import LogNorm
 from utils import *
-from scipy.sparse import csr_matrix, save_npz
 
 
 class FOURIER_TRANSFORM:
@@ -107,24 +106,27 @@ class FOURIER_TRANSFORM:
         # pad the image with zeros
         padded_image = np.zeros((N_padded, M_padded), dtype=complex)
         padded_image[:N, :M] = image
-        originalCount = N * M
-
-        # define compression levels
-        compression = [0, 14, 30, 50, 70, 95]
+        count = N * M
+        compression_lvls = [0, 20, 40, 65, 80, 99.9]
 
         # Perform the FFT of the image
         transformed_image = fft_2d(padded_image)
 
-        # render
-        fig, ax = plt.subplots(2, 3)
-        for i in range(2):
-            for j in range(3):
-                compression_lvl = compression[i*3 + j]
-                image_compressed = self.compress_image(
-                    transformed_image, compression_lvl, originalCount)
-                ax[i, j].imshow(np.real(image_compressed)[
+        compressed_images = []
+        for cl in compression_lvls:
+            compressed_images.append(
+                self.image_compression(transformed_image, cl, count))
+
+        # render images
+        img_counter, r, c = 0, 2, 3
+        fig, ax = plt.subplots(r, c)
+        for i in range(r):
+            for j in range(c):
+                ax[i, j].set_title(
+                    'Current compression level:{}%'.format(compression_lvls[img_counter]))
+                ax[i, j].imshow(np.real(compressed_images[img_counter])[
                                 :N, :M], plt.cm.gray)
-                ax[i, j].set_title('{}% compression'.format(compression_lvl))
+                img_counter += 1
 
         fig.suptitle('Mode 3')
         plt.show()
@@ -202,19 +204,19 @@ class FOURIER_TRANSFORM:
         print(np.allclose(fft_inverse_2d(y), np.fft.ifft2(y)))
         # self.display(abs(np.fft.fft2(self.image)))
 
-    def compress_image(self, im_fft, compression_level, originalCount):
+    def image_compression(self, transformed_image, compression_level, count):
         if compression_level < 0 or compression_level > 100:
-            AssertionError('compression_level must be between 0 to 100')
+            print("Invalid compression values")
+            return
 
-        rest = 100 - compression_level
-        lower = np.percentile(im_fft, rest//2)
-        upper = np.percentile(im_fft, 100 - rest//2)
-        print('non zero values for level {}% are {} out of {}'.format(compression_level, int(
-            originalCount * ((100 - compression_level) / 100.0)), originalCount))
-
-        compressed_im_fft = im_fft * \
-            np.logical_or(im_fft <= lower, im_fft >= upper)
-        save_npz('coefficients-{}-compression.csr'.format(compression_level),
-                 csr_matrix(compressed_im_fft))
-
+        percentile = (100 - compression_level)//2
+        l = np.percentile(transformed_image, percentile)
+        u = np.percentile(transformed_image, 100 - percentile)
+        x = np.logical_or(transformed_image <= l, transformed_image >= u)
+        compressed_im_fft = transformed_image * x
+        self.print_img_compression_log(compression_level, count)
         return fft_inverse_2d(compressed_im_fft)
+
+    def print_img_compression_log(self, cl, count):
+        nzv = int(count * ((100 - cl) / 100.0))
+        print('non zero values for level {}% are {} out of {}'.format(cl, nzv, count))

@@ -79,18 +79,12 @@ class FOURIER_TRANSFORM:
         transformed_image[:, int(c*fraction):int(c*(1-fraction))] = 0
 
         # Print the number of non-zeros you are using and the fraction they represent of the original Fourier coefficients
-        print("Number of non-zeros before converting back to original size: ",
-              np.count_nonzero(transformed_image))
-        print("Fraction before converting back to original size: ",
-              100*np.count_nonzero(transformed_image)/(r*c), "%")
+        print("Number of non-zeros: ", np.count_nonzero(transformed_image))
+        print("Fraction: ", 100*np.count_nonzero(transformed_image)/(r*c), "%")
 
         # Perform the inverse FFT of the image
         denoised_image = fft_inverse_2d(transformed_image)
         denoised_image = denoised_image[:N, :M]
-        print("Number of non-zeros after converting back to original size: ",
-              np.count_nonzero(denoised_image))
-        print("Fraction after converting back to original size: ",
-              100*np.count_nonzero(denoised_image)/(N*M), "%")
         plt.subplot(1, 2, 2)
         plt.imshow(abs(denoised_image), cmap='gray', norm=LogNorm())
         plt.title('Denoised Image')

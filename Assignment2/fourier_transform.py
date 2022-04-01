@@ -10,7 +10,6 @@ class FOURIER_TRANSFORM:
     def __init__(self, args):
         self.mode = args.MODE
         self.image = cv2.imread(args.IMAGE, cv2.IMREAD_GRAYSCALE)
-        self.test()
         if(self.mode == 1):
             self.perform_fft(self.image)
         elif(self.mode == 2):
@@ -181,23 +180,6 @@ class FOURIER_TRANSFORM:
         plt.legend(loc="upper left")
         plt.show()
 
-    def test(self):
-        print(np.allclose(dft_naive_1d(
-            [1, 2, 3, 4, 5, 6]), np.fft.fft([1, 2, 3, 4, 5, 6])))
-        print(np.allclose(dft_naive_2d(
-            [[1, 2], [3, 4], [5, 6]]), np.fft.fft2([[1, 2], [3, 4], [5, 6]])))
-        print(np.allclose(dft_inverse_1d(
-            [1, 2, 3, 4, 5, 6]), np.fft.ifft([1, 2, 3, 4, 5, 6])))
-        print(np.allclose(dft_inverse_2d(
-            [[1, 2], [3, 4], [5, 6]]), np.fft.ifft2([[1, 2], [3, 4], [5, 6]])))
-        x = np.random.rand(64)
-        print(np.allclose(fft_1d(x), np.fft.fft(x)))
-        print(np.allclose(fft_inverse_1d(x), np.fft.ifft(x)))
-        y = np.random.rand(64, 64)
-        print(np.allclose(fft_2d(y), np.fft.fft2(y)))
-        print(np.allclose(fft_inverse_2d(y), np.fft.ifft2(y)))
-        # self.display(abs(np.fft.fft2(self.image)))
-
     def image_compression(self, transformed_image, compression_level, count):
         if compression_level < 0 or compression_level > 100:
             print("Invalid compression values")
@@ -214,3 +196,19 @@ class FOURIER_TRANSFORM:
     def print_img_compression_log(self, cl, count):
         nzv = int(count * ((100 - cl) / 100.0))
         print('non zero values for level {}% are {} out of {}'.format(cl, nzv, count))
+
+    def test(self):
+        print(np.allclose(dft_naive_1d(
+            [1, 2, 3, 4, 5, 6]), np.fft.fft([1, 2, 3, 4, 5, 6])))
+        print(np.allclose(dft_naive_2d(
+            [[1, 2], [3, 4], [5, 6]]), np.fft.fft2([[1, 2], [3, 4], [5, 6]])))
+        print(np.allclose(dft_inverse_1d(
+            [1, 2, 3, 4, 5, 6]), np.fft.ifft([1, 2, 3, 4, 5, 6])))
+        print(np.allclose(dft_inverse_2d(
+            [[1, 2], [3, 4], [5, 6]]), np.fft.ifft2([[1, 2], [3, 4], [5, 6]])))
+        x = np.random.rand(64)
+        print(np.allclose(fft_1d(x), np.fft.fft(x)))
+        print(np.allclose(fft_inverse_1d(x), np.fft.ifft(x)))
+        y = np.random.rand(64, 64)
+        print(np.allclose(fft_2d(y), np.fft.fft2(y)))
+        print(np.allclose(fft_inverse_2d(y), np.fft.ifft2(y)))
